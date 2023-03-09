@@ -1,9 +1,10 @@
 import logging
+from functools import partial
 from typing import Any, Dict
 
-from PySide2.QtCore import QRectF, QSize, Qt
+from PySide2.QtCore import QPoint, QRectF, QSize, Qt
 from PySide2.QtGui import QFontMetrics, QIcon
-from PySide2.QtWidgets import QHBoxLayout, QLabel, QStyle, QWidget
+from PySide2.QtWidgets import QHBoxLayout, QLabel, QMenu, QStyle, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,10 @@ class ModListItemInner(QWidget):
         else:
             self.main_label = QLabel(item_name)
 
+        # Context Menu
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.contextMenuEvent)
+
         # Icons by mod source
         self.mod_source_icon = QLabel()
         self.mod_source_icon.setPixmap(self.get_icon().pixmap(QSize(20, 20)))
@@ -85,7 +90,9 @@ class ModListItemInner(QWidget):
                 authors_text = ", ".join(list_of_authors)
                 author_line = f"Authors: {authors_text}\n"
             else:
-                logger.error(f"[authors] tag does not contain [li] tag: {self.json_data['authors']}")
+                logger.error(
+                    f"[authors] tag does not contain [li] tag: {self.json_data['authors']}"
+                )
         else:
             author_line = f"Author: {self.json_data.get('author', 'UNKNOWN')}\n"
 
@@ -113,3 +120,12 @@ class ModListItemInner(QWidget):
             logger.error(
                 f"No type found for ModListItemInner with package id {self.json_data.get('packageId')}"
             )
+
+    def contextMenuEvent(self, point: QPoint) -> None:
+        contextMenu = QMenu(self)
+        set_run_args = contextMenu.addAction("Edit Run Args")
+        print(self.json_data.get("name"))
+        # set_run_args.triggered.connect(
+        #     partial(self.actions_signal.emit, "edit_run_args")
+        # )
+        action = contextMenu.exec_(self.mapToGlobal(point))
