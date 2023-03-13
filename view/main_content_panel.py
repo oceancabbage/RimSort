@@ -266,23 +266,53 @@ class MainContent:
         self._insert_data_into_lists(active_mods_data, inactive_mods_data)
 
     def steamworks_subscriptions_handler(self, instruction: list) -> None:
+        """
+        Handle instructions received from connected signals
+
+        :param instruction: a list where:
+            instruction[0] is a string that corresponds with the following supported_actions[]
+            instruction[1] is an int that corresponds with a subscribed Steam mod's PublishedFileId
+        """
         logger.info(
             f"Steamworks subscriptions handler received instruction: {instruction}"
         )
         supported_actions = ["subscribe", "unsubscribe"]
-        if instruction[0] in supported_actions:
-            logger.info("Creating steamworks_wrapper...")
-            steamworks_wrapper = SteamworksInterface()
+        if (
+            instruction[0] in supported_actions
+        ):  # Actions can be added as functions are implemented in util.steam.steamworks.wrapper
+            logger.info(f"Creating SteamworksThread with instruction {instruction}")
+            steamworks_interface = SteamworksInterface()
+            while (
+                True
+            ):  # Ensure that Steamworks API is initialized before attempting any instruction
+                if steamworks_interface.steamworks.loaded():
+                    break
+                sleep(0.1)
             if instruction[0] == "unsubscribe":
-                steamworks_wrapper.steamworks.Workshop.UnsubscribeItem(
+                steamworks_interface.steamworks.Workshop.UnsubscribeItem(
                     int(instruction[1])
                 )
             elif instruction[0] == "subscribe":
-                steamworks_wrapper.steamworks.Workshop.SubscribeItem(
+                steamworks_interface.steamworks.Workshop.SubscribeItem(
                     int(instruction[1])
                 )
-            sleep(5)
-            steamworks_wrapper.steamworks.unload()
+        else:
+            logger.error(
+                f"Unable to create SteamworksThread with unsupported instruction {instruction}"
+            )
+            return
+        # Wait for thread to complete with 5 second timeout
+        steamworks_interface.steamworks_thread.join(5)
+        # While the thread is alive, we wait for it. This means that the above Thread.join() reached the timeout...
+        # This is not good! Steam is not responding to your instruction!) TODO make this case more extensive & exit gracefully
+        while steamworks_interface.steamworks_thread.is_alive():
+            logger.error("No response!")
+        else:  # This means that Steam responded to our instruction. We are done with Steamworks API now, so we dispose of everything.
+            logger.info("Thread completed. Unloading Steamworks...")
+            steamworks_interface.steamworks_thread = None
+            steamworks_interface.steamworks.unload()
+            steamworks_interface.steamworks = None
+            steamworks_interface = None
 
     def actions_slot(self, action: str) -> None:
         """
@@ -366,7 +396,7 @@ class MainContent:
             )
 
     def _do_generate_metadata_by_appid(self) -> None:
-        apikey = 294100
+        appid = 294100
         logger.info(
             f"Initializing AppIDQuery with configured Steam API key for AppID: {appid}..."
         )
@@ -374,6 +404,10 @@ class MainContent:
         appid_query.all_mods_metadata = appid_query._all_mods_metadata_by_appid(
             self.game_configuration.webapi_query_expiry
         )
+        db_output_path = os.path.join(os.getcwd(), "data", f"{appid}_AppIDQuery.json")
+        logger.info(f"Caching DynamicQuery result: {db_output_path}")
+        with open(db_output_path, "w") as output:
+            json.dump(appid_query.all_mods_metadata, output, indent=4)
 
     def _do_generate_metadata_comparison_report(self) -> None:
         mods = self.all_mods_with_dependencies
